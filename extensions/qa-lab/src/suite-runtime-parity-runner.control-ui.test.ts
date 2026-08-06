@@ -61,6 +61,7 @@ beforeEach(() => {
       summaryPath: "/qa-output/qa-suite-summary.json",
       report: "",
       scenarios: [{ name: context.selectedScenarios[0]?.title, status: "pass", steps: [] }],
+      startedScenarioIds: context.selectedScenarios.map((scenario) => scenario.id),
       watchUrl: "http://127.0.0.1:43123",
       runtimeParityCell: {
         runtime: params?.forcedRuntime ?? "openclaw",
@@ -83,6 +84,44 @@ beforeEach(() => {
 });
 
 describe("runtime parity Control UI ownership", () => {
+  it("keeps checkpoint ownership at the logical runtime-parity scenario", async () => {
+    const lab = createControlUiTestLab();
+    const profileCheckpoint = {
+      start: vi.fn(async () => {}),
+      complete: vi.fn(async () => {}),
+    };
+    mocks.writeQaSuiteArtifacts.mockResolvedValueOnce({
+      evidence: {
+        kind: "openclaw.qa.evidence-summary",
+        schemaVersion: 2,
+        generatedAt: "2026-08-06T00:00:00.000Z",
+        evidenceMode: "full",
+        entries: [],
+      },
+      evidencePath: "/qa-output/qa-evidence.json",
+      report: "",
+      reportPath: "/qa-output/qa-suite-report.md",
+      summaryPath: "/qa-output/qa-suite-summary.json",
+    });
+
+    await runQaFlowSuiteFromRuntime({
+      repoRoot: "/qa-repo",
+      outputDir: "/qa-output",
+      providerMode: "mock-openai",
+      scenarioIds: ["runtime-channel"],
+      runtimePair: ["openclaw", "codex"],
+      lab,
+      startLab: async () => lab,
+      profileCheckpoint,
+    });
+
+    expect(profileCheckpoint.start).toHaveBeenCalledOnce();
+    expect(profileCheckpoint.complete).toHaveBeenCalledOnce();
+    expect(
+      mocks.runQaFlowSuiteStandard.mock.calls.every(([params]) => !params.profileCheckpoint),
+    ).toBe(true);
+  });
+
   it.each([
     {
       label: "a non-Control UI scenario by default",

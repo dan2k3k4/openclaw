@@ -69,6 +69,8 @@ export async function runQaRuntimeParitySuite(params: {
   scenarioIds?: readonly string[];
   runtimePair: [RuntimeId, RuntimeId];
   writeEvidenceFile?: boolean;
+  profileCheckpoint?: QaSuiteRunParams["profileCheckpoint"];
+  profileCheckpointChannel?: string;
 }) {
   const ownsLab = !params.lab;
   const startLab = requireQaSuiteStartLab(params.startLab);
@@ -122,6 +124,7 @@ export async function runQaRuntimeParitySuite(params: {
       params.selectedScenarios,
       params.concurrency,
       async (scenario, index): Promise<QaSuiteScenarioResult> => {
+        await params.profileCheckpoint?.start(scenario.id, params.profileCheckpointChannel);
         const scenarioIdForLog = sanitizeQaSuiteProgressValue(scenario.id);
         writeQaSuiteProgress(
           params.progressEnabled,
@@ -323,5 +326,19 @@ export async function runQaRuntimeParitySuite(params: {
     throw new Error("QA runtime parity suite completed without a result");
   }
   writeQaSuiteProgress(params.progressEnabled, "run complete");
+  if (params.profileCheckpoint) {
+    for (const [index, scenario] of params.selectedScenarios.entries()) {
+      const scenarioResult = result.scenarios[index];
+      if (scenarioResult) {
+        await params.profileCheckpoint.complete({
+          scenarioId: scenario.id,
+          channel: params.profileCheckpointChannel,
+          evidence: result.evidence!,
+          result: scenarioResult.status === "skip" ? "skipped" : scenarioResult.status,
+          reason: scenarioResult.details,
+        });
+      }
+    }
+  }
   return result;
 }

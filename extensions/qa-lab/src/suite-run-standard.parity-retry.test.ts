@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { QaEvidenceSummaryJson } from "./evidence-summary.js";
 import type { QaLabServerHandle } from "./lab-server.types.js";
 import { runQaFlowSuiteStandard } from "./suite-run-standard.js";
 import { makeQaSuiteTestScenario } from "./suite-test-helpers.js";
@@ -37,7 +38,7 @@ const mocks = vi.hoisted(() => ({
     stop: vi.fn(async () => {}),
   })),
   writeQaSuiteArtifacts: vi.fn(async () => ({
-    evidence: undefined,
+    evidence: undefined as QaEvidenceSummaryJson | undefined,
     evidencePath: "/qa-output/qa-evidence.json",
     report: "",
     reportPath: "/qa-output/qa-suite-report.md",
@@ -200,8 +201,55 @@ describe("QA suite Control UI ownership", () => {
 });
 
 describe("QA runtime parity scenario retry isolation", () => {
+  it("checkpoints a standard scenario around its durable evidence", async () => {
+    const events: string[] = [];
+    const profileCheckpoint = {
+      start: vi.fn(async (scenarioId: string) => {
+        events.push(`start:${scenarioId}`);
+      }),
+      complete: vi.fn(async ({ scenarioId }: { scenarioId: string }) => {
+        events.push(`complete:${scenarioId}`);
+      }),
+    };
+    mocks.writeQaSuiteArtifacts.mockResolvedValueOnce({
+      evidence: {
+        kind: "openclaw.qa.evidence-summary",
+        schemaVersion: 2,
+        generatedAt: "2026-08-06T00:00:00.000Z",
+        evidenceMode: "full",
+        entries: [],
+      },
+      evidencePath: "/qa-output/qa-evidence.json",
+      report: "",
+      reportPath: "/qa-output/qa-suite-report.md",
+      summaryPath: "/qa-output/qa-suite-summary.json",
+    });
+
+    await runQaFlowSuiteStandard(
+      { lab: makeRetryTestLab(), profileCheckpoint },
+      makeRetryTestContext(),
+      vi.fn<QaSuiteScenarioRunner>().mockImplementation(async () => {
+        events.push("run");
+        return makeRetryTestResult("pass");
+      }),
+    );
+
+    expect(events).toEqual([
+      "start:runtime-soak-100-turn",
+      "run",
+      "complete:runtime-soak-100-turn",
+    ]);
+    expect(profileCheckpoint.complete).toHaveBeenCalledWith(
+      expect.objectContaining({ result: "pass", evidence: expect.any(Object) }),
+    );
+  });
+
   it("does not report terminal success when cleanup fails after writing artifacts", async () => {
     const lab = makeRetryTestLab();
+    const profileCheckpoint = {
+      start: vi.fn(async () => {}),
+      complete: vi.fn(async () => {}),
+    };
     const cleanupError = Object.assign(new Error("gateway shutdown socket reset"), {
       code: "ECONNRESET",
     });
@@ -210,7 +258,7 @@ describe("QA runtime parity scenario retry isolation", () => {
     ]);
 
     const thrown = await runQaFlowSuiteStandard(
-      { lab },
+      { lab, profileCheckpoint },
       makeRetryTestContext(),
       vi.fn<QaSuiteScenarioRunner>().mockResolvedValue(makeRetryTestResult("pass")),
     ).catch((error: unknown) => error);
@@ -232,6 +280,8 @@ describe("QA runtime parity scenario retry isolation", () => {
     expect(lab.setLatestReport).toHaveBeenCalledWith(
       expect.objectContaining({ outputPath: "/qa-output/qa-suite-report.md" }),
     );
+    expect(profileCheckpoint.start).toHaveBeenCalledOnce();
+    expect(profileCheckpoint.complete).not.toHaveBeenCalled();
     expect(
       mocks.writeQaSuiteProgress.mock.calls.filter(([, message]) =>
         String(message).startsWith("run complete"),

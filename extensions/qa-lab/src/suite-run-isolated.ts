@@ -156,6 +156,7 @@ export async function runQaFlowSuiteIsolated(
       selectedScenarios,
       concurrency,
       async (scenario, index): Promise<QaSuiteScenarioResult> => {
+        await params?.profileCheckpoint?.start(scenario.id, params.profileCheckpointChannel);
         const scenarioIdForLog = sanitizeQaSuiteProgressValue(scenario.id);
         writeQaSuiteProgress(
           progressEnabled,
@@ -347,5 +348,19 @@ export async function runQaFlowSuiteIsolated(
     throw new Error("QA suite completed without terminal result metadata");
   }
   writeQaSuiteProgress(progressEnabled, completionProgress);
+  if (params?.profileCheckpoint) {
+    for (const [index, scenario] of selectedScenarios.entries()) {
+      const scenarioResult = completedScenarioResults[index];
+      if (scenarioResult) {
+        await params.profileCheckpoint.complete({
+          scenarioId: scenario.id,
+          channel: params.profileCheckpointChannel,
+          evidence: result.evidence!,
+          result: scenarioResult.status === "skip" ? "skipped" : scenarioResult.status,
+          reason: scenarioResult.details,
+        });
+      }
+    }
+  }
   return result;
 }

@@ -238,6 +238,7 @@ export async function runQaFlowSuiteStandard(
     };
     await captureGatewayHeapCheckpoint("suite-start");
     for (const [index, scenario] of selectedScenarios.entries()) {
+      await params?.profileCheckpoint?.start(scenario.id, params.profileCheckpointChannel);
       startedScenarioIds.push(scenario.id);
       const scenarioIdForLog = sanitizeQaSuiteProgressValue(scenario.id);
       writeQaSuiteProgress(
@@ -469,6 +470,20 @@ export async function runQaFlowSuiteStandard(
   }
   if (!params?.captureRuntimeParityCell && !isQaSuiteNestedRun(params)) {
     writeQaSuiteProgress(progressEnabled, completionProgress);
+  }
+  if (params?.profileCheckpoint) {
+    for (const [index, scenario] of selectedScenarios.entries()) {
+      const scenarioResult = result.scenarios[index];
+      if (scenarioResult) {
+        await params.profileCheckpoint.complete({
+          scenarioId: scenario.id,
+          channel: params.profileCheckpointChannel,
+          evidence: result.evidence!,
+          result: scenarioResult.status === "skip" ? "skipped" : scenarioResult.status,
+          reason: scenarioResult.details,
+        });
+      }
+    }
   }
   return result;
 }

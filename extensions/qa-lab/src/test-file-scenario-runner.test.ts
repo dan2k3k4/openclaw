@@ -334,6 +334,39 @@ describe("qa test file scenario runner", () => {
     });
   });
 
+  it("checkpoints test-file execution before launch and after evidence construction", async () => {
+    const repoRoot = await makeTempRepo("qa-test-file-checkpoint-");
+    const events: string[] = [];
+    const outputDir = path.join(repoRoot, ".artifacts", "qa-e2e", "checkpoint");
+    const scenario = makeTestFileScenario("playwright", "ui/src/e2e/chat-flow.e2e.test.ts");
+    await runQaTestFileScenarios({
+      repoRoot,
+      outputDir,
+      providerMode: "mock-openai",
+      primaryModel: "mock-openai/gpt-5.6-luna",
+      scenarios: [scenario],
+      profileCheckpoint: {
+        start: async (scenarioId) => {
+          events.push(`start:${scenarioId}`);
+        },
+        complete: async ({ scenarioId, evidence }) => {
+          await expect(
+            fs.access(path.join(outputDir, "qa-evidence.json")),
+          ).resolves.toBeUndefined();
+          expect(evidence.entries.map((entry) => entry.test.id)).toEqual([scenario.id]);
+          events.push(`complete:${scenarioId}`);
+        },
+      },
+      runCommand: async (command) => {
+        events.push("run");
+        await writeNativeVitestReport(command, { passed: 1 });
+        return { exitCode: 0, stdout: "pass\n", stderr: "" };
+      },
+    });
+
+    expect(events).toEqual([`start:${scenario.id}`, "run", "run", `complete:${scenario.id}`]);
+  });
+
   it("can return aggregate evidence without writing a duplicate evidence file", async () => {
     const repoRoot = await makeTempRepo("qa-playwright-memory-evidence-");
     const result = await runQaTestFileScenarios({

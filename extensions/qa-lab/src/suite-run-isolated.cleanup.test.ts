@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createQaBusState } from "./bus-state.js";
+import type { QaEvidenceSummaryJson } from "./evidence-summary.js";
 import type { QaLabServerHandle } from "./lab-server.types.js";
 import type { QaTransportAdapterFactory } from "./qa-transport-registry.js";
 import { runQaFlowSuiteIsolated } from "./suite-run-isolated.js";
@@ -26,7 +27,7 @@ const mocks = vi.hoisted(() => ({
     stop: vi.fn(async () => {}),
   })),
   writeQaSuiteArtifacts: vi.fn(async () => ({
-    evidence: undefined,
+    evidence: undefined as QaEvidenceSummaryJson | undefined,
     evidencePath: "/qa-output/qa-evidence.json",
     report: "",
     reportPath: "/qa-output/qa-suite-report.md",
@@ -170,6 +171,50 @@ describe("isolated QA suite transport cleanup", () => {
     expect((thrown as Error).cause).toBe(cleanupError);
     expect(stderrWrite.mock.calls.flat().join("")).not.toContain("run complete");
     stderrWrite.mockRestore();
+  });
+
+  it("records child cleanup failure from the parent without exposing the reporter", async () => {
+    const lab = createCleanupTestLab();
+    const profileCheckpoint = {
+      start: vi.fn(async () => {}),
+      complete: vi.fn(async () => {}),
+    };
+    mocks.writeQaSuiteArtifacts.mockResolvedValue({
+      evidence: {
+        kind: "openclaw.qa.evidence-summary",
+        schemaVersion: 2,
+        generatedAt: "2026-08-06T00:00:00.000Z",
+        evidenceMode: "full",
+        entries: [],
+      },
+      evidencePath: "/qa-output/qa-evidence.json",
+      report: "",
+      reportPath: "/qa-output/qa-suite-report.md",
+      summaryPath: "/qa-output/qa-suite-summary.json",
+    });
+    const runChild = vi.fn<QaSuiteRunner>().mockImplementation(async (childParams) => {
+      expect(childParams?.profileCheckpoint).toBeUndefined();
+      throw new Error("child cleanup failed");
+    });
+
+    const result = await runQaFlowSuiteIsolated(
+      {
+        lab,
+        profileCheckpoint,
+        startLab: async () => lab,
+      },
+      createCleanupTestContext(),
+      runChild,
+    );
+
+    expect(profileCheckpoint.start).toHaveBeenCalledOnce();
+    expect(profileCheckpoint.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: "fail",
+        reason: "child cleanup failed",
+      }),
+    );
+    expect(result.scenarios).toMatchObject([{ status: "fail", details: "child cleanup failed" }]);
   });
 
   it("prints one generic completion after a real nested standard run and parent cleanup", async () => {

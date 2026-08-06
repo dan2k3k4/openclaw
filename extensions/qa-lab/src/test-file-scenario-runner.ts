@@ -16,6 +16,7 @@ import {
   resolveQaEvidenceProfile,
   validateQaEvidenceSummaryJson,
 } from "./evidence-summary.js";
+import type { QaProfileRunCheckpointReporter } from "./profile-run-checkpoint.js";
 import type { QaProviderMode } from "./providers/index.js";
 import type { QaSeedScenarioWithSource } from "./scenario-catalog.js";
 import type { QaScorecardEvidenceMode } from "./scorecard-taxonomy.js";
@@ -57,6 +58,8 @@ type QaTestFileScenarioRunParams = {
   runCommand?: QaScenarioCommandRunner;
   scenarios: readonly QaSeedScenarioWithSource[];
   writeEvidenceFile?: boolean;
+  profileCheckpoint?: QaProfileRunCheckpointReporter;
+  profileCheckpointChannel?: string;
 };
 
 type QaScenarioCommandRunner = (
@@ -590,6 +593,14 @@ export async function runQaTestFileScenarios(
   for (const [scenarioTimeoutMs, group] of dockerBatchGroups) {
     // A scheduler invocation shares one fallback lane timeout, so timeout overrides
     // stay in separate batches instead of borrowing another scenario's budget.
+    const profileCheckpoint = params.profileCheckpoint;
+    if (profileCheckpoint) {
+      await Promise.all(
+        group.map((scenario) =>
+          profileCheckpoint.start(scenario.id, params.profileCheckpointChannel),
+        ),
+      );
+    }
     results.push(
       ...(await runDockerE2eBatch({
         commandTimeoutMs: scenarioTimeoutMs,
@@ -606,6 +617,7 @@ export async function runQaTestFileScenarios(
     if (dockerBatchScenarioIds.has(scenario.id)) {
       continue;
     }
+    await params.profileCheckpoint?.start(scenario.id, params.profileCheckpointChannel);
     const result = await runQaTestFileScenario({
       env,
       commandTimeoutMs,
@@ -645,6 +657,15 @@ export async function runQaTestFileScenarios(
     outputDir: params.outputDir,
     writeEvidenceFile: params.writeEvidenceFile,
   });
+  for (const result of results) {
+    await params.profileCheckpoint?.complete({
+      scenarioId: result.scenario.id,
+      channel: params.profileCheckpointChannel,
+      evidence,
+      result: result.status,
+      reason: result.failureMessage,
+    });
+  }
   return {
     ...paths,
     evidence,
