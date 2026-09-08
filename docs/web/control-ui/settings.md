@@ -10,6 +10,8 @@ sidebarTitle: "Settings"
 
 Everything under Settings, plus the settings-owned pages the sidebar links to.
 
+Model menus with more than eight choices include search. Filter by model name or provider/model reference, then choose a result to apply it. Typing or dismissing the menu leaves the current selection unchanged. Short menus stay compact, and custom model entry remains available where the setting supports it.
+
 ## Environment identity
 
 When you run several Gateways, set `gateway.controlUi.environment` to distinguish their browser tabs and windows:
@@ -60,7 +62,13 @@ Set an agent's display name, emoji, and avatar under **Agent settings → Overvi
 
 ## Gateway host status
 
-Open **Settings → Connection** to see the **Gateway Host** card with the Gateway machine, LAN address, operating system, runtime, uptime, CPU load, memory, and space for each mounted local disk. The card refreshes every 10 seconds while visible through the `system.info` Gateway RPC, which requires the `operator.read` scope. If mounted-disk discovery is unavailable, the card retains the state-directory disk reading when available. Connections without the required scope omit the card.
+The connection settings use one **Gateway secret** field for the configured
+token or password. The Gateway accepts either wire field; its auth mode selects
+the configured secret. After a successful token-mode connection, the UI remembers
+the secret in session storage for the current browser tab and Gateway only.
+Passwords stay in memory and are never persisted.
+
+Open **Settings → Gateway** to see the **Gateway Host** card with the Gateway machine, LAN address, operating system, runtime, uptime, CPU load, memory, and space for each mounted local disk. The card refreshes every 10 seconds while visible through the `system.info` Gateway RPC, which requires the `operator.read` scope. If mounted-disk discovery is unavailable, the card retains the state-directory disk reading when available. Connections without the required scope omit the card.
 
 ## Language support
 
